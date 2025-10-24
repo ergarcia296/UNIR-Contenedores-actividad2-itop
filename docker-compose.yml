@@ -40,7 +40,8 @@ services:
   # 2. Servicio de Aplicación iTop
   # ----------------------------------------------------
   itop:
-    image: elestio/itop
+    build: .
+    image: itop:v1
     container_name: itop-app
     restart: always
     # 🚨 DEPENDENCIA CRÍTICA:
@@ -66,8 +67,12 @@ services:
     volumes:
       # Uso de 'bind mounts' (montajes de host) para las carpetas críticas de iTop.
       # Esto asegura que la configuración y los datos de iTop persistan en el directorio local de tu proyecto.
-      - ./itop_conf:/var/www/itop/conf 
-      - ./itop_data:/var/www/itop/data 
+      - ./itop_conf:/var/www/html/conf 
+      - ./itop_data:/var/www/html/data 
+      - ./itop_log:/var/www/html/log
+      - ./itop_env_prod:/var/www/html/env-production
+      - ./itop_env_prod_build:/var/www/html/env-production-build
+      - ./itop_extensions:/var/www/html/extensions
       # ... (otros volúmenes para log, env-production, etc.) ...
 
   # ----------------------------------------------------
