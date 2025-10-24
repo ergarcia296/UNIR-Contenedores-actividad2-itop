@@ -1,0 +1,103 @@
+version: '3.8' # Versión de la especificación de Docker Compose. Es estándar usar '3.8' o superior.
+
+services:
+  # ----------------------------------------------------
+  # 1. Servicio de Base de Datos (mariadb/mysql)
+  # ----------------------------------------------------
+  mariadb:
+    # El nombre de servicio 'mariadb' se usa como hostname (nombre de host)
+    # dentro de la red de Docker para que iTop y phpMyAdmin puedan conectarse.
+    image: elestio/mysql:8.0
+    container_name: itop-mariadb # Nombre fijo para el contenedor (opcional, pero útil)
+    restart: always # Asegura que el contenedor se reinicie si falla o si Docker se reinicia.
+    environment:
+      # Variables de entorno esenciales para configurar la base de datos al iniciar el contenedor.
+      MYSQL_ROOT_PASSWORD: "itop123" # Contraseña del usuario 'root' (administrador de la DB).
+      MYSQL_DATABASE: "itop"         # Nombre de la base de datos que usará iTop.
+      MYSQL_USER: "egarcia"          # Nombre del usuario de la aplicación iTop.
+      MYSQL_PASSWORD: "itop"         # Contraseña del usuario de la aplicación iTop.
+    volumes:
+      # Volumen persistente: almacena los datos de la base de datos en el host (db_data)
+      # para que no se pierdan al detener o eliminar el contenedor.
+      - db_data:/var/lib/mysql
+    ports:
+      # Mapeo de puertos: "PUERTO_HOST:PUERTO_CONTENEDOR".
+      # Permite el acceso a la base de datos desde tu máquina (localhost:3306).
+      - "3306:3306"
+    
+    # 🚨 CONFIGURACIÓN CRÍTICA: Healthcheck
+    # Define cómo Docker debe comprobar si el servicio de base de datos está realmente listo
+    # para recibir conexiones, resolviendo el error de "dependency failed to start".
+    healthcheck:
+      # Comando que se ejecuta dentro del contenedor para verificar la salud (un 'ping' a MySQL).
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s       # Frecuencia de la comprobación.
+      timeout: 5s         # Tiempo de espera antes de considerar que la comprobación falló.
+      retries: 5          # Número de intentos antes de marcar el servicio como 'unhealthy'.
+      start_period: 20s   # Período inicial para que la DB se levante sin ser marcada como 'unhealthy'.
+
+  # ----------------------------------------------------
+  # 2. Servicio de Aplicación iTop
+  # ----------------------------------------------------
+  itop:
+    image: elestio/itop
+    container_name: itop-app
+    restart: always
+    # 🚨 DEPENDENCIA CRÍTICA:
+    # Indica que el servicio 'itop' NO debe comenzar hasta que el servicio 'mariadb' esté en estado 'healthy' (saludable),
+    # gracias al healthcheck que definimos arriba.
+    depends_on:
+      mariadb:
+        condition: service_healthy 
+    ports:
+      # Mapeo de puertos: Mapea el puerto 80 del contenedor al puerto 80 del host.
+      # iTop será accesible en http://localhost o http://[IP_DEL_HOST].
+      - "80:80"
+    environment:
+      # Variables de conexión de iTop con la DB:
+      ITOP_DB_HOST: mariadb  # El hostname es el nombre del servicio de la DB.
+      ITOP_DB_NAME: itop     # Coincide con MYSQL_DATABASE en el servicio mariadb.
+      ITOP_DB_USER: egarcia  # Coincide con MYSQL_USER en el servicio mariadb.
+      ITOP_DB_PASS: itop     # Coincide con MYSQL_PASSWORD en el servicio mariadb.
+      # Otras variables para configurar PHP (límites de memoria, subidas, etc.)
+      PHP_MEMORY_LIMIT: 256M 
+      PHP_UPLOAD_MAX_FILESIZE: 8M
+      # ... (otras configuraciones de PHP) ...
+    volumes:
+      # Uso de 'bind mounts' (montajes de host) para las carpetas críticas de iTop.
+      # Esto asegura que la configuración y los datos de iTop persistan en el directorio local de tu proyecto.
+      - ./itop_conf:/var/www/itop/conf 
+      - ./itop_data:/var/www/itop/data 
+      # ... (otros volúmenes para log, env-production, etc.) ...
+
+  # ----------------------------------------------------
+  # 3. Servicio de phpMyAdmin (Gestión de la DB)
+  # ----------------------------------------------------
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: itop-phpmyadmin
+    restart: always
+    depends_on:
+      - mariadb # Simplemente espera a que mariadb esté arriba, aunque 'service_healthy' sería más robusto.
+    ports:
+      # Mapeo de puertos: Usa 8081 en el host para evitar el conflicto con iTop (que usa 80).
+      # phpMyAdmin será accesible en http://localhost:8081.
+      - "8081:80"
+    environment:
+      # Variables de conexión de phpMyAdmin a la DB:
+      PMA_HOST: mariadb  # El hostname es el nombre del servicio de la DB.
+      PMA_PORT: 3306     # Puerto interno de la DB.
+      PMA_USER: root     # phpMyAdmin generalmente se conecta con el usuario root.
+      PMA_PASSWORD: itop123 # Coincide con MYSQL_ROOT_PASSWORD del servicio mariadb.
+      
+# ----------------------------------------------------
+# 4. Definición de Volúmenes Persistentes
+# ----------------------------------------------------
+volumes:
+  # Volumen para la base de datos (datos de mariadb).
+  db_data:      
+  # Los siguientes volúmenes están definidos en la sección 'itop' como 'bind mounts' 
+  # (montajes de directorio local), por lo que definirlos aquí es redundante 
+  # a menos que quisieras usar volúmenes con nombre para iTop.
+  # Para el ejemplo, mantener los bind mounts (./itop_conf, etc.) es la forma más común.
+  # Si el directorio no existe, Docker lo creará.
