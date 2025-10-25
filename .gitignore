@@ -1,0 +1,7 @@
+itop_conf
+itop_data
+itop_env_prod
+itop_env_prod_build
+itop_extensions
+itop_log
+docker-compose.old

@@ -4,11 +4,11 @@ services:
   # ----------------------------------------------------
   # 1. Servicio de Base de Datos (mariadb/mysql)
   # ----------------------------------------------------
-  mariadb:
-    # El nombre de servicio 'mariadb' se usa como hostname (nombre de host)
+  db:
+    # El nombre de servicio 'db' se usa como hostname (nombre de host)
     # dentro de la red de Docker para que iTop y phpMyAdmin puedan conectarse.
-    image: elestio/mysql:8.0
-    container_name: itop-mariadb # Nombre fijo para el contenedor (opcional, pero útil)
+    image: mysql:8.0
+    container_name: itop-db # Nombre fijo para el contenedor (opcional, pero útil)
     restart: always # Asegura que el contenedor se reinicie si falla o si Docker se reinicia.
     environment:
       # Variables de entorno esenciales para configurar la base de datos al iniciar el contenedor.
@@ -40,15 +40,15 @@ services:
   # 2. Servicio de Aplicación iTop
   # ----------------------------------------------------
   itop:
-    build: .
-    image: itop:v1
+    build: . # instruccion para que construya la imagen de itop a partir del archivo Dockerfile hubicado en este directorio
+    image: itop:v1 # Nombre y tag que le asignara a la imagen
     container_name: itop-app
     restart: always
     # 🚨 DEPENDENCIA CRÍTICA:
-    # Indica que el servicio 'itop' NO debe comenzar hasta que el servicio 'mariadb' esté en estado 'healthy' (saludable),
+    # Indica que el servicio 'itop' NO debe comenzar hasta que el servicio 'db' esté en estado 'healthy' (saludable),
     # gracias al healthcheck que definimos arriba.
     depends_on:
-      mariadb:
+      db:
         condition: service_healthy 
     ports:
       # Mapeo de puertos: Mapea el puerto 80 del contenedor al puerto 80 del host.
@@ -56,24 +56,22 @@ services:
       - "80:80"
     environment:
       # Variables de conexión de iTop con la DB:
-      ITOP_DB_HOST: mariadb  # El hostname es el nombre del servicio de la DB.
-      ITOP_DB_NAME: itop     # Coincide con MYSQL_DATABASE en el servicio mariadb.
-      ITOP_DB_USER: egarcia  # Coincide con MYSQL_USER en el servicio mariadb.
-      ITOP_DB_PASS: itop     # Coincide con MYSQL_PASSWORD en el servicio mariadb.
+      ITOP_DB_HOST: db       # El hostname es el nombre del servicio de la DB.
+      ITOP_DB_NAME: itop     # Coincide con MYSQL_DATABASE en el servicio db.
+      ITOP_DB_USER: egarcia  # Coincide con MYSQL_USER en el servicio db.
+      ITOP_DB_PASS: itop     # Coincide con MYSQL_PASSWORD en el servicio db.
       # Otras variables para configurar PHP (límites de memoria, subidas, etc.)
       PHP_MEMORY_LIMIT: 256M 
       PHP_UPLOAD_MAX_FILESIZE: 8M
-      # ... (otras configuraciones de PHP) ...
     volumes:
-      # Uso de 'bind mounts' (montajes de host) para las carpetas críticas de iTop.
-      # Esto asegura que la configuración y los datos de iTop persistan en el directorio local de tu proyecto.
-      - ./itop_conf:/var/www/html/conf 
-      - ./itop_data:/var/www/html/data 
-      - ./itop_log:/var/www/html/log
-      - ./itop_env_prod:/var/www/html/env-production
-      - ./itop_env_prod_build:/var/www/html/env-production-build
-      - ./itop_extensions:/var/www/html/extensions
-      # ... (otros volúmenes para log, env-production, etc.) ...
+      # Volumen persistente: almacena los datos de configuracion de itop
+      # para que no se pierdan al detener o eliminar el contenedor.
+      - itop_conf:/var/www/html/conf 
+      - itop_data:/var/www/html/data 
+      - itop_log:/var/www/html/log
+      - itop_env-production:/var/www/html/env-production
+      - itop_env-production-build:/var/www/html/env-production-build
+      - itop_extensions:/var/www/html/extensions
 
   # ----------------------------------------------------
   # 3. Servicio de phpMyAdmin (Gestión de la DB)
@@ -83,14 +81,14 @@ services:
     container_name: itop-phpmyadmin
     restart: always
     depends_on:
-      - mariadb # Simplemente espera a que mariadb esté arriba, aunque 'service_healthy' sería más robusto.
+      - db # Simplemente espera a que mariadb esté arriba, aunque 'service_healthy' sería más robusto.
     ports:
       # Mapeo de puertos: Usa 8081 en el host para evitar el conflicto con iTop (que usa 80).
       # phpMyAdmin será accesible en http://localhost:8081.
       - "8081:80"
     environment:
       # Variables de conexión de phpMyAdmin a la DB:
-      PMA_HOST: mariadb  # El hostname es el nombre del servicio de la DB.
+      PMA_HOST: db  # El hostname es el nombre del servicio de la DB.
       PMA_PORT: 3306     # Puerto interno de la DB.
       PMA_USER: root     # phpMyAdmin generalmente se conecta con el usuario root.
       PMA_PASSWORD: itop123 # Coincide con MYSQL_ROOT_PASSWORD del servicio mariadb.
@@ -101,8 +99,11 @@ services:
 volumes:
   # Volumen para la base de datos (datos de mariadb).
   db_data:      
-  # Los siguientes volúmenes están definidos en la sección 'itop' como 'bind mounts' 
-  # (montajes de directorio local), por lo que definirlos aquí es redundante 
-  # a menos que quisieras usar volúmenes con nombre para iTop.
-  # Para el ejemplo, mantener los bind mounts (./itop_conf, etc.) es la forma más común.
-  # Si el directorio no existe, Docker lo creará.
+  # Los siguientes volúmenes están definidos en la sección 'itop'  
+  itop_conf:
+  itop_data:
+  itop_log:
+  itop_env-production:
+  itop_env-production-build:
+  itop_extensions:
+
